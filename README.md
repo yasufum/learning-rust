@@ -5526,6 +5526,132 @@ impl State for Published {
 
 ## 19. パターンとマッチング
 
+パターンは構造体の方に対してマッチングを行うための、Rustの特殊なシンタックスです。
+マッチングは次の要素を組み合わせることで行う事ができます。
+
+- Literals
+- Destructured arrays, enums, structs, or tuples
+- Variables
+- Wildcards
+- Placeholders
+
+### 19.1 パターンの使いどころ
+
+#### match Arms
+
+第6章で議論したように、パターンを`match`のアームで使います。
+
+```rs
+match VALUE {
+    PATTERN => EXPRESSION,
+    PATTERN => EXPRESSION,
+    PATTERN => EXPRESSION,
+}
+```
+
+例えば`Option<i32>`型の値を持つ変数`x`をマッチさせるには、次の様にします。
+
+```rs
+match x {
+    None => None,
+    Some(i) => Some(i + 1),
+}
+```
+
+`match`式では全てのパターンを網羅的に列挙する必要があります。
+これを担保する一つのやり方としては、アームの最後に`catchall`パターンを適用することです。
+`_`は任意のパターンにマッチするため、よく`match`アームの最後に置かれます。
+
+#### 条件分岐のif let式
+
+第6章で1つの場合にしか合致しないに`if let`でmatchと同様の処理を短く書く方法について学びました。
+`else`を用いると、`if`でマッチしないケースもカバーすることができます。
+次の例は`if let`を用いて背景色を決定するコードです。
+
+```rs:src/main.rs
+fn main() {
+    let favorite_color: Option<&str> = None;
+    let is_tuesday = false;
+    let age: Result<u8, _> = "34".parse();
+
+    if let Some(color) = favorite_color {
+        println!("Using your favorite color, {color}, as the background");
+    } else if is_tuesday {
+        println!("Tuesday is green day!");
+    } else if let Ok(age) = age {
+        if age > 30 {
+            println!("Using purple as the background color");
+        } else {
+            println!("Using orange as the background color");
+        }
+    } else {
+        println!("Using blue as the background color");
+    }
+}
+```
+
+#### while let条件分岐ループ
+
+while let条件分岐ループは、パターンがマッチする限りwhileループを実行します。
+ここでは、スレッドで起動した処理の結果を待つために`while`ループを利用しています。
+
+```rs
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for val in [1, 2, 3] {
+            tx.send(val).unwrap();
+        }
+    });
+
+    while let Ok(value) = rx.recv() {
+        println!("{value}");
+    }
+```
+
+#### forループ
+
+`for`ループでは要素をパターンマッチにより受け取り、処理を行います。
+
+```rs
+    let v = vec!['a', 'b', 'c'];
+
+    for (index, value) in v.iter().enumerate() {
+        println!("{value} is at index {index}");
+    }
+```
+
+#### let文
+
+実は`let`でもパターンマッチを行っています。
+
+```rs
+let PATTERN = EXPRESSION;
+```
+
+パターンマッチの例として分かり易いものには例えば以下のようなものがあります。
+`x`、`y`、`z`をタプルの要素として宣言し、`1`、`2`、`3`にそれぞれ束縛します。
+
+```rs
+let (x, y, z) = (1, 2, 3);
+```
+
+#### 関数の引数
+
+関数の引数も同様にパターン煮することができます。
+このコードでは引数として受け取った`&(3, 5)`に対してパターンマッチを行い、
+`x`と`y`に`3`、`5`を代入しています。
+
+```rs
+fn print_coordinates(&(x, y): &(i32, i32)) {
+    println!("Current location: ({x}, {y})");
+}
+
+fn main() {
+    let point = (3, 5);
+    print_coordinates(&point);
+}
+```
+
 ## 20. 高度な機能
 
 ## 21. 最後のプロジェクト：マルチスレッドのWebサーバを構築する
