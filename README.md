@@ -8,7 +8,9 @@ The Bookの目次は以下の通りです。20章から構成されており
 
 ## 目次
 
+- [目次](#目次)
 - [1. 事始め](#1-事始め)
+  - [とりあえず動かしてみる](#とりあえず動かしてみる)
 - [2. 数当てゲームのプログラミング](#2-数当てゲームのプログラミング)
   - [変数の束縛](#変数の束縛)
   - [コマンドライン引数による入力](#コマンドライン引数による入力)
@@ -80,10 +82,13 @@ The Bookの目次は以下の通りです。20章から構成されており
   - [16.4 SyncトレイトとSendトレイトによる並行性の拡張](#164-syncトレイトとsendトレイトによる並行性の拡張)
 - [17. 非同期プログラミングの基本: Async Await Futures Streams](#17-非同期プログラミングの基本-async-await-futures-streams)
   - [17.1 FuturesシンタックスとAsyncシンタックス](#171-futuresシンタックスとasyncシンタックス)
-  - [17.2](#172)
-  - [17.3](#173)
+  - [17.2  asyncによる並行処理](#172--asyncによる並行処理)
+  - [17.3 任意の数のFutureを使う](#173-任意の数のfutureを使う)
   - [17.4](#174)
 - [18. Rustのオブジェクト指向プログラミング機能](#18-rustのオブジェクト指向プログラミング機能)
+  - [18.1 オブジェクト指向言語の特徴](#181-オブジェクト指向言語の特徴)
+  - [18.2 異なる型の値を許容するためのトレイトオブジェクト](#182-異なる型の値を許容するためのトレイトオブジェクト)
+  - [18.3 オブジェクト指向デザインパターンの実装](#183-オブジェクト指向デザインパターンの実装)
 - [19. パターンとマッチング](#19-パターンとマッチング)
 - [20. 高度な機能](#20-高度な機能)
 - [21. 最後のプロジェクト：マルチスレッドのWebサーバを構築する](#21-最後のプロジェクトマルチスレッドのwebサーバを構築する)
@@ -1542,6 +1547,39 @@ fn main() {
     let p3 = p1.mixup(p2);
 
     println!("p3.x = {}, p3.y = {}", p3.x, p3.y);
+}
+```
+
+#### ジェネリクスを用いたときのパフォーマンス
+
+ジェネリック型を使用したとしても、性能が低下することはありません。
+Rustはコンパイル時に単相化（Monomorphization）という処理によりジェネリック型を
+具体的な型に変換することで、これを実現しています。
+
+例えばenumである`Option<T>`にて定義されている`Some`は以下のように用いますが、コンパイル時に
+個別の型を持つ複数のenumに変換されて適用されます。
+
+```rs
+let integer = Some(5);
+let integer = Some(5.0);
+```
+
+上の例の引数の型はそれぞれ`i32`および`f64`であるため、変換された`Option`は次の様になります。
+
+```rs
+enum Option_i32 {
+    Some(i32),
+    None,
+}
+
+enum Option_f64 {
+    Some(f64),
+    None,
+}
+
+fn main() {
+    let integer = Option_i32::Some(5);
+    let float = Option_f64::Some(5.0);
 }
 ```
 
@@ -5068,6 +5106,423 @@ hi number 9 from the first task!
 ### 17.4
 
 ## 18. Rustのオブジェクト指向プログラミング機能
+
+オブジェクト指向プログラミングはプログラムをモデル化する手法の一つです。Rustはオブジェクト指向ですが、そうでないものもあります。
+この章では、一般的にオブジェクト指向と考えられている特徴と、その特徴がRustのイディオムとしてどのように反映されるかを探ります。
+そして、Rustでオブジェクト指向のデザインパターンを実装する方法と、
+Rustの長所を生かしたソリューションを実装する方法とのトレードオフについて説明します。
+
+### 18.1 オブジェクト指向言語の特徴
+
+一般的にプログラミングコミュニティにおいてオブジェクト指向として備えなければならない機能という共通的なコンセンサスはありません。
+RustはOOPを含む多くのプログラミングのパラダイムに影響を受けており、例えば13章で説明した関数型言語の機能はその一つです。
+ここではオブジェクトやカプセル化、継承などOOP言語の共通的な機能について見ていきます。
+
+#### オブジェクトにおけるデータと振る舞い
+
+Erich Gamma等による
+[Design Patterns: Elements of Reusable Object-Oriented Software](https://en.wikipedia.org/wiki/Design_Patterns)
+は`Gang of Four`によるオブジェクト指向のデザインパターンの本として有名ですが、
+次の様にOOPを定義しています。
+
+```text
+オブジェクト指向プログラムはオブジェクトで構成されている。
+オブジェクトはデータと、そのデータを操作する処理を1つにまとめており、その処理はメソッドまたはオペレーションと呼ばれる。
+```
+
+この定義に従えばRustはオブジェクト指向であると言えます。`struct`や`enum`はデータを持ち、
+`impl`ブロックがそれらのメソッドを提供します。
+オブジェクトという言い方はしませんが、機能としてはオブジェクトと同等です。
+
+#### カプセル化による詳細の隠蔽
+
+OOPにおけるもう一つの共通的なアイデアはカプセル化です。オブジェクトは公開されたAPIを経由して状態を取得したり操作することが出来ます。
+7章で述べたようにRustでは`pub`というキーワードを用いてモジュールや関数などを公開することができます。
+以下の`AveragedCollection`は1つの数値リストとその平均値を保持する構造体の例です。
+
+```rs:src/lib.rs
+pub struct AveragedCollection {
+    list: Vec<i32>,
+    average: f64,
+}
+```
+
+なおこの`AberageCollection`は公開されますが、そのメンバーは`pub`が指定されていないため外部からアクセスすることができません。
+代わりにAPIを用意してこれらの値が変更されるようにします。
+`pub`により公開された`add()`もしくは`remove()`によりリストの要素を変更し、`average()`により平均値を取得します。
+
+```rs:src/lib.rs
+impl AveragedCollection {
+    pub fn add(&mut self, value: i32) {
+        self.list.push(value);
+        self.update_average();
+    }
+
+    pub fn remove(&mut self) -> Option<i32> {
+        let result = self.list.pop();
+        match result {
+            Some(value) => {
+                self.update_average();
+                Some(value)
+            }
+            None => None,
+        }
+    }
+
+    pub fn average(&self) -> f64 {
+        self.average
+    }
+
+    fn update_average(&mut self) {
+        let total: i32 = self.list.iter().sum();
+        self.average = total as f64 / self.list.len() as f64;
+    }
+}
+```
+
+#### 型システムおよびコード共有としての継承
+
+継承はあるオブジェクトの性質を他のオブジェクトに引き継ぐための仕組みです。
+Rustには継承は無いため、ある構造体から他の構造体へ継承を行う事は出来ません。
+しかしながら別の形でその考え方を取り入れており、例えばトレイトではデフォルトの関数を定義することができ、
+またポリモーフィズムと同等のジェネリックにより抽象化を実現しています。
+
+### 18.2 異なる型の値を許容するためのトレイトオブジェクト
+
+Rustでは配列に格納する型は1つのみです。8章では回避方法として`SpreadsheetCell`という`enum`を定義しました。
+しかしながら、異なる型の値を格納する配列を使う方が便利な場合もあります。
+ここではGUIプログラミングを行うための`gui`ライブラリを作成すること想定し、
+配列に異なるGUI要素、例えば`Button`や`TextField`を格納する例を考えてみます。
+
+#### トレイトを用いた共通的な振る舞いの定義
+
+`draw`メソッドを持つ`Draw`トレイトを実装し、さらにトレイトオブジェクトを受け取り配列に格納するようにします。
+
+```rs:src/lib.rs
+pub trait Draw {
+    fn draw(&self);
+}
+```
+
+トレイトオブジェクトを格納するには、参照もしくは`Box`のようなスマートポインタを利用し、`dyn`キーワード(dynamicの略?)を与えて
+トレイト（この場合は`Draw`）を指定します。
+
+```rs:src/lib.rs
+pub trait Screen {
+    pub components: Vec<Box<dyn Draw>>,
+}
+```
+
+次にこの`Screen`に`run()`メソッドを実装し、`components`に格納された`Draw`トレイトの`draw`メソッドを
+逐次呼び出すようにします。
+
+```rs:src/lib.rs
+impl Screen {
+    pub fn run(&self) {
+        for component in self.components.iter() {
+            component.draw();
+        }
+    }
+}
+```
+
+これはジェネリック型パラメータを使用する構造体をトレイト境界で定義するのとは異なります。
+ジェネリック型パラメーターは一度に1つの具象型にしか置換できませんが、
+トレイト・オブジェクトでは実行時に複数の具象型がトレイト・オブジェクトを埋めることができます。
+たとえば、ジェネリック型とトレイト境界を使用してScreen構造体を定義することができます。
+
+```rs:src/lib.rs
+pub struct Screen<T: Draw> {
+    pub components: Vec<T>,
+}
+
+impl<T> Screen<T>
+where
+    T: Draw,
+{
+    pub fn run(&self) {
+        for component in self.components.iter() {
+            component.draw();
+        }
+    }
+}
+```
+
+これにより、`Button`型または`TextField`型のコンポーネントのリストを持つ`Screen`インスタンスに制限されます。
+同種のコレクションしか持たないのであれば、ジェネリックスとトレイト境界を使用する方が望ましいです。
+一方、トレイトオブジェクトを利用すれば、一つの`Screen`インスタンスが`Box<Botton>`や`Box<TextField>`など
+複数の型を格納する`Vec<T>`を定義出来ます。
+
+#### トレイトの実装
+
+次に`Draw`トレイトに追加する型を実装していきます。
+この例の`Button`は実際にGUIプログラムとして動作するものは作成しませんが、
+一般的に必要となる`width`や`height`、`label`などのメンバーを追加してみます。
+
+```rs:src/lib.rs
+pub struct Button {
+    pub width: u32,
+    pub height: u32,
+    pub label: String,
+}
+
+impl Draw for Button {
+    fn draw(&self) {
+        // code to actually draw a button
+    }
+}
+```
+
+これらのメンバーは他の構造体とは異なりますが、
+`Draw`トレイトの実装として`draw`関数を定義することで適切に処理を行うようにします。
+この仕組みにより、この`gui`ライブラリのユーザーが新たに独自の`SelectBox`構造体を定義することも可能です。
+
+```rs:src/main.rs
+use gui::Draw;
+
+struct SelectBox {
+    width: u32,
+    height: u32,
+    options: Vec<String>,
+}
+
+impl Draw for SelectBox {
+    fn draw(&self) {
+        // code to actually draw a select box
+    }
+}
+```
+
+これでユーザーは`Screen`構造体のインスタンスを生成し、
+異なる型のコンポーネントを格納した配列に対して逐次的に処理を行う事が出来ます。
+
+```rs:src/main.rs
+use gui::{Button, Screen};
+
+fn main() {
+    let screen = Screen {
+        components: vec![
+            Box::new(SelectBox {
+                width: 75,
+                height: 10,
+                options: vec![
+                    String::from("Yes"),
+                    String::from("Maybe"),
+                    String::from("No"),
+                ],
+            }),
+            Box::new(Button {
+                width: 50,
+                height: 10,
+                label: String::from("OK"),
+            }),
+        ],
+    };
+
+    screen.run();
+}
+```
+
+#### トレイトオブジェクトの動的ディスパッチ
+
+10.1章の
+[ジェネリクスを用いたときのパフォーマンス](#ジェネリクスを用いたときのパフォーマンス)
+で単相化（monomorphization）処理により性能低下が生じないことを見ましたが、
+この処理は静的ディスパッチと呼ばれます。
+一方、トレイトオブジェクトに関しては、Rustコンパイラはコンパイル時に型を知ることが出来ず、
+実行時に解決する動的ディスパッチと呼ばれる処理を実行します。
+動的ディスパッチではトレイトオブジェクトの保持するポインタを用いてどの関数を呼び出すかを調べるため、
+この処理が性能上のコストに繋がります。
+
+### 18.3 オブジェクト指向デザインパターンの実装
+
+オブジェクト指向のデザインパターンの一つにstateパターンがあります。
+これは状態を表す値（stateオブジェクトの値）を定義し、オブジェクトの状態とするもので、
+例えば`draft`や`review`、`published`などが考えられます。
+Rustでこのようなパターンを実装する場合、もちろん構造体およびトレイトを用います。
+
+このstateパターンの利点として、あるビジネスロジックを実装し、後ほどそれが変更された場合でも、
+stateオブジェクトを一つアップデートするだけで良いと言うことが挙げられます。
+
+この章ではstateパターンを用いて以下のような処理を実装してみます。
+
+1. ブログ記事を投稿するために、空白のドラフト記事を作成
+2. ドラフト版が完成したら、レビューのリクエストを行う
+3. 記事のレビューがOKであれば、公開される
+4. レビューが通らない記事は公開されないようにしつつ、公開されたブログ記事のみが表示されるようにする
+
+次のコード例はこの処理ロジックの流れを実装したものです（まだコンパイルは通りません）。
+
+```rs:src/main.rs
+use blog::Post;
+
+fn main() {
+    let mut post = Post::new();
+
+    post.add_text("I ate a salad for lunch today");
+    assert_eq!("", post.content());
+
+    post.request_review();
+    assert_eq!("", post.content());
+
+    post.approve();
+    assert_eq!("I ate a salad for lunch today", post.content());
+}
+```
+
+この`Post`型のオブジェクトはstateパターンにて実装されており、状態を表す3つのstateオブジェクトの内の1つを保持しています。
+また状態の遷移はオブジェクトの内部にて状況に応じて実行されます。
+
+#### Postオブジェクトの定義およびドラフト記事のインスタンス生成
+
+手始めに`Post`構造体およびその`new`メソッドを実装します。
+この構造体は状態を保持する`state`メンバ変数を持ち、`Option<T>`の内部に
+トレイトオブジェクトである`Box<dyn State>>`の値を持つかたちで実装されます。
+
+```rs:src/lib.rs
+pub struct Post {
+    state: Option<Box<dyn State>>,
+    content: String,
+}
+
+impl Post {
+    pub fn new() -> Post {
+        Post {
+            state: Some(Box::new(Draft {})),
+            content: String::new(),
+        }
+    }
+}
+
+trait State {}
+
+struct Draft {}
+
+impl State for Draft {}
+```
+
+`State`トレイトはポストのそれぞれの状態で共有される振る舞いを定義します。
+また状態オブジェクトには`Draft`、`PendingReview`および`Published`があります。
+ただし`Draft`の他は今はまだ必要ないため実装していません。
+
+#### ポストへのテキストの格納
+
+ポストにテキストを追加するために`add_text`メソッドを追加します。
+このメソッドはオブジェクト自身の値を変更するため`self`はmutableな参照となります。
+
+```rs:src/lib.rs
+impl Post {
+    // --snip--
+    pub fn add_text(&mut self, text: &str) {
+        self.content.push_str(text);
+    }
+}
+```
+
+#### ドラフトのポストを空にする
+
+ドラフト版のポストはまだ公開が確定しているわけでは無いため、その内容をクリアする場合もあります。
+
+```rs:src/lib.rs
+impl Post {
+    // --snip--
+    pub fn content(&self) -> &str {
+        ""
+    }
+}
+```
+
+#### レビューのリクエストと状態の遷移
+
+次にレビューのリクエストを行う機能を実装します。
+このときポストの状態を`Draft`から`PendingReview`に変更します。
+
+```rs:src/lib.rs
+impl Post {
+    // --snip--
+    pub fn request_review(&mut self) {
+        if let Some(s) = self.state.take() {
+            self.state = Some(s.request_review())
+        }
+    }
+}
+
+trait State {
+    fn request_review(self: Box<Self>) -> Box<dyn State>;
+}
+
+struct Draft {}
+
+impl State for Draft {
+    fn request_review(self: Box<Self>) -> Box<dyn State> {
+        Box::new(PendingReview {})
+    }
+}
+
+struct PendingReview {}
+
+impl State for PendingReview {
+    fn request_review(self: Box<Self>) -> Box<dyn State> {
+        self
+    }
+}
+```
+
+`Post`は公開メソッドである`request_review`を提供し、引数として`self`をとります。
+次に内部で状態オブジェクトが提供するもうひとつの`request_review`メソッドを呼び出し、
+状態を新たに変更します。
+
+#### contentの振る舞いを変更するapproveメソッドを追加する
+
+`approve`メソッドにおいても`request_review`と同様に、自身の状態を現在のものに変更します。
+
+```rs:src/lib.rs
+impl Post {
+    // --snip--
+    pub fn approve(&mut self) {
+        if let Some(s) = self.state.take() {
+            self.state = Some(s.approve())
+        }
+    }
+}
+
+trait State {
+    fn request_review(self: Box<Self>) -> Box<dyn State>;
+    fn approve(self: Box<Self>) -> Box<dyn State>;
+}
+
+struct Draft {}
+
+impl State for Draft {
+    // --snip--
+    fn approve(self: Box<Self>) -> Box<dyn State> {
+        self
+    }
+}
+
+struct PendingReview {}
+
+impl State for PendingReview {
+    // --snip--
+    fn approve(self: Box<Self>) -> Box<dyn State> {
+        Box::new(Published {})
+    }
+}
+
+struct Published {}
+
+impl State for Published {
+    fn request_review(self: Box<Self>) -> Box<dyn State> {
+        self
+    }
+
+    fn approve(self: Box<Self>) -> Box<dyn State> {
+        self
+    }
+}
+```
+
+[TODO]
 
 ## 19. パターンとマッチング
 
