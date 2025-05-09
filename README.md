@@ -90,6 +90,9 @@ The Bookの目次は以下の通りです。20章から構成されており
   - [18.2 異なる型の値を許容するためのトレイトオブジェクト](#182-異なる型の値を許容するためのトレイトオブジェクト)
   - [18.3 オブジェクト指向デザインパターンの実装](#183-オブジェクト指向デザインパターンの実装)
 - [19. パターンとマッチング](#19-パターンとマッチング)
+  - [19.1 パターンの使いどころ](#191-パターンの使いどころ)
+  - [19.2 Refutability: パターンマッチが失敗するかどうか](#192-refutability-パターンマッチが失敗するかどうか)
+  - [19.3 パターンシンタックス](#193-パターンシンタックス)
 - [20. 高度な機能](#20-高度な機能)
 - [21. 最後のプロジェクト：マルチスレッドのWebサーバを構築する](#21-最後のプロジェクトマルチスレッドのwebサーバを構築する)
 
@@ -5650,6 +5653,422 @@ fn main() {
     let point = (3, 5);
     print_coordinates(&point);
 }
+```
+
+### 19.2 Refutability: パターンマッチが失敗するかどうか
+
+いずれのパターンにもマッチするような場合を*irrefutable*、そうで無い場合を*refurable*であると言います。
+例えば`let x = 5`は常にマッチするため*irrefutable*です。
+もしパターンマッチが失敗する可能性がある場合は*refutable*となります。
+例えば`if let Some(x) = a_value`の`a_value`は`None`となる可能性があるため、
+この場合は*refutable*です。
+
+関数のパラメータやlet文、forループはマッチしないと意味が無いため、*irrefutable*パターンのみが有効です。
+`if let`、`while let`や`let-else`は*refurable*と*irrefutable*の両方を受け取りますが、
+コンパイラにより警告されます。
+通常はrefutabilityについてそれほど気にする必要はありませんが、
+理解しておくとコンパイラの警告メッセージを読む助けになることがあります。
+例えば以下の例では、`None`が考慮されていないためエラーとなります。
+
+```rs
+let Some(x) = some_option_value;
+```
+
+出力は次の通りです。
+
+```sh
+$ cargo run
+   Compiling patterns v0.1.0 (file:///projects/patterns)
+error[E0005]: refutable pattern in local binding
+ --> src/main.rs:3:9
+  |
+3 |     let Some(x) = some_option_value;
+  |         ^^^^^^^ pattern `None` not covered
+  |
+  = note: `let` bindings require an "irrefutable pattern", like a `struct` or an `enum` with only one variant
+  = note: for more information, visit https://doc.rust-lang.org/book/ch18-02-refutability.html
+  = note: the matched value is of type `Option<i32>`
+help: you might want to use `let else` to handle the variant that isn't matched
+  |
+3 |     let Some(x) = some_option_value else { todo!() };
+  |                                     ++++++++++++++++
+
+For more information about this error, try `rustc --explain E0005`.
+error: could not compile `patterns` (bin "patterns") due to 1 previous error
+```
+
+これを解決するには、*irrefutable*パターンを考慮し、
+`if let`を用いてマッチした場合のコードブロックを追加するようにします。
+なおマッチしなかった場合は単純に何もせずスキップされます。
+
+```rs
+if let Some(x) = some_option_value {
+    println!("{x}");
+}
+```
+
+一方、以下のように単なる値の束縛に`if let`を用いようとすると、
+コード自体は正常に動くはずですが、不要に*irrefutable*パターンを考慮しているため
+警告メッセージが表示されます。
+
+```sh
+$ cargo run
+   Compiling patterns v0.1.0 (file:///projects/patterns)
+warning: irrefutable `if let` pattern
+ --> src/main.rs:2:8
+  |
+2 |     if let x = 5 {
+  |        ^^^^^^^^^
+  |
+  = note: this pattern will always match, so the `if let` is useless
+  = help: consider replacing the `if let` with a `let`
+  = note: `#[warn(irrefutable_let_patterns)]` on by default
+
+warning: `patterns` (bin "patterns") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running `target/debug/patterns`
+5
+```
+
+### 19.3 パターンシンタックス
+
+パターンのシンタックスについて一通りまとめます。
+
+#### リテラルのマッチング
+
+パターンをを直接リテラルにマッチさせるやり方です。
+
+```rs
+    let x = 1;
+
+    match x {
+        1 => println!("one"),
+        2 => println!("two"),
+        3 => println!("three"),
+        _ => println!("anything"),
+    }
+```
+
+#### 名前付き変数のマッチング
+
+変数のマッチングにはスコープが適用されるため、以下の例では`match x {}`の内部にある`y`は
+その外側とは別に新たな変数として使用されます。
+
+```rs
+let x = Some(5);
+let y = 10;
+
+match x {
+    Some(50) => println!("Got 50"),
+    Some(y) => println!("Matched, y = {y}"),
+    _ => println!("Default case, x = {x:?}"),
+}
+
+println!("at the end: x = {x:?}, y = {y}");
+```
+
+#### 複数のパターン
+
+`|`によりor条件を指定できます。
+
+```rs
+let x = 1;
+
+match x {
+    1 | 2 => println!("one or two"),
+    3 => println!("three"),
+    _ => println!("anything"),
+}
+```
+
+#### 範囲指定によるマッチング
+
+`..=`により値の範囲を指定したマッチングを行う事が出来ます。
+
+```rs
+let x = 5;
+
+match x {
+    1..=5 => println!("one through five"),
+    _ => println!("something else"),
+}
+```
+
+また`char`の値も同様に範囲を指定することができます。
+
+```rs
+let x = 'c';
+
+match x {
+    'a'..='j' => println!("early ASCII letter"),
+    'k'..='z' => println!("late ASCII letter"),
+    _ => println!("something else"),
+}
+```
+
+#### 値を分解する
+
+##### 構造体
+
+あらかじめ生成した構造体のオブジェクトから、`let`を用いて値を抽出し
+新たな変数として束縛することが出来ます。
+
+```rs
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+fn main() {
+    let p = Point { x: 0, y: 7 };
+
+    let Point { x: a, y: b } = p;
+    assert_eq!(0, a);
+    assert_eq!(7, b);
+}
+```
+
+またパターンマッチにおいても同様の使い方ができます。
+
+```rs
+fn main() {
+    let p = Point { x: 0, y: 7 };
+
+    match p {
+        Point { x, y: 0 } => println!("On the x axis at {x}"),
+        Point { x: 0, y } => println!("On the y axis at {y}"),
+        Point { x, y } => {
+            println!("On neither axis: ({x}, {y})");
+        }
+    }
+}
+```
+
+##### Enum
+
+enumに関しては既に6章で分解の例を見てきましたが、あらためて議論します。
+前に用いた`Message`では`Move`などメンバ変数を持つ要素を持ち、
+パターンマッチにおいてこれらの値を抽出して利用することができます。
+
+```rs
+enum Message {
+    Quit,
+    Move { x: i32, y: i32 },
+    Write(String),
+    ChangeColor(i32, i32, i32),
+}
+
+fn main() {
+    let msg = Message::ChangeColor(0, 160, 255);
+
+    match msg {
+        Message::Quit => {
+            println!("The Quit variant has no data to destructure.");
+        }
+        Message::Move { x, y } => {
+            println!("Move in the x direction {x} and in the y direction {y}");
+        }
+        Message::Write(text) => {
+            println!("Text message: {text}");
+        }
+        Message::ChangeColor(r, g, b) => {
+            println!("Change the color to red {r}, green {g}, and blue {b}");
+        }
+    }
+}
+```
+
+##### ネストされたデータ
+
+ある構造体に別の構造体が含まれるようなネスト構造のデータに関してもパターンマッチを行う事が出来ます。
+以下の例では`Message`の`ChangeColor`要素のメンバーを`(i32, i32, i32)`から
+別のenumである`Color`に置き換えたものですが、
+パターンマッチにおいて`Color`の要素を抽出しています。
+
+```rs
+enum Color {
+    Rgb(i32, i32, i32),
+    Hsv(i32, i32, i32),
+}
+
+enum Message {
+    Quit,
+    Move { x: i32, y: i32 },
+    Write(String),
+    ChangeColor(Color),
+}
+
+fn main() {
+    let msg = Message::ChangeColor(Color::Hsv(0, 160, 255));
+
+    match msg {
+        Message::ChangeColor(Color::Rgb(r, g, b)) => {
+            println!("Change color to red {r}, green {g}, and blue {b}");
+        }
+        Message::ChangeColor(Color::Hsv(h, s, v)) => {
+            println!("Change color to hue {h}, saturation {s}, value {v}");
+        }
+        _ => (),
+    }
+}
+```
+
+##### 構造体とタプルの混合データ
+
+```rs
+let ((feet, inches), Point { x, y }) = ((3, 10), Point { x: 3, y: -10 });
+```
+
+#### 一部の値を無視したマッチング
+
+マッチした値自体を使わない場合、名前に`_`を付けることでその値に関心が無いことを示し
+無視することが出来ます。
+
+```rs
+fn foo(_: i32, y: i32) {
+    println!("This code only uses the y parameter: {y}");
+}
+
+fn main() {
+    foo(3, 4);
+}
+```
+
+ネスト構造データのパターンマッチにおいても以下のようにして適用できます。
+
+```rs
+    let mut setting_value = Some(5);
+    let new_setting_value = Some(10);
+
+    match (setting_value, new_setting_value) {
+        (Some(_), Some(_)) => {
+            println!("Can't overwrite an existing customized value");
+        }
+        _ => {
+            setting_value = new_setting_value;
+        }
+    }
+
+    println!("setting is {setting_value:?}");
+```
+
+##### 要素の残りを無視する
+
+連続するデータの一部にしか興味が無い場合、`..`を用いることで残りのデータを無視することができます。
+
+```rs
+    struct Point {
+        x: i32,
+        y: i32,
+        z: i32,
+    }
+
+    let origin = Point { x: 0, y: 0, z: 0 };
+
+    match origin {
+        Point { x, .. } => println!("x is {x}"),
+    }
+```
+
+先頭のみマッチさせるのでは無く、末尾もマッチさせることができます。
+
+```rs
+fn main() {
+    let numbers = (2, 4, 8, 16, 32);
+
+    match numbers {
+        (first, .., last) => {
+            println!("Some numbers: {first}, {last}");
+        }
+    }
+}
+```
+
+ただし、次のようにどこの要素を指しているのかが曖昧な場合は許容されません。
+
+```rs
+fn main() {
+    let numbers = (2, 4, 8, 16, 32);
+
+    match numbers {
+        (.., second, ..) => {
+            println!("Some numbers: {second}")
+        },
+    }
+}
+```
+
+この場合、以下のようにエラーとなります。
+
+```rs
+$ cargo run
+   Compiling patterns v0.1.0 (file:///projects/patterns)
+error: `..` can only be used once per tuple pattern
+ --> src/main.rs:5:22
+  |
+5 |         (.., second, ..) => {
+  |          --          ^^ can only be used once per tuple pattern
+  |          |
+  |          previously used here
+
+error: could not compile `patterns` (bin "patterns") due to 1 previous error
+```
+
+#### 追加条件によるマッチガード
+
+マッチガードはパターンに`if`文を追加することでさらなる条件を付与するための手法です。
+
+```rs
+    let num = Some(4);
+
+    match num {
+        Some(x) if x % 2 == 0 => println!("The number {x} is even"),
+        Some(x) => println!("The number {x} is odd"),
+        None => (),
+    }
+```
+
+マッチガードでは`match x{}`の外側のスコープの変数がそのまま流用されます。
+以下の例では、`match`節の中にある`if n == y`の`y`はその外側の`let y = 10`にて
+束縛された値が適用されます。
+
+```rs
+fn main() {
+    let x = Some(5);
+    let y = 10;
+
+    match x {
+        Some(50) => println!("Got 50"),
+        Some(n) if n == y => println!("Matched, n = {n}"),
+        _ => println!("Default case, x = {x:?}"),
+    }
+
+    println!("at the end: x = {x:?}, y = {y}");
+}
+```
+
+#### @束縛
+
+`@`演算子はパターンマッチにおいて範囲の指定と新たな変数の束縛を同時に行います。
+以下の例では`Message::Hello`の`id`が`3..=7`の範囲であれば
+`id_variable`という変数に`id`の値を束縛して`printn!`に渡しています。
+
+```rs
+    enum Message {
+        Hello { id: i32 },
+    }
+
+    let msg = Message::Hello { id: 5 };
+
+    match msg {
+        Message::Hello {
+            id: id_variable @ 3..=7,
+        } => println!("Found an id in range: {id_variable}"),
+        Message::Hello { id: 10..=12 } => {
+            println!("Found an id in another range")
+        }
+        Message::Hello { id } => println!("Found some other id: {id}"),
+    }
 ```
 
 ## 20. 高度な機能
